@@ -1,0 +1,19 @@
+<launch>
+
+  <arg name="rviz" default="true" />
+
+  <node pkg="loam_velodyne_vance" type="scanRegistration-64E_vance" name="scanRegistration" output="screen">
+    <!--remap from="/velodyne_points" to="/kitti/velo/pointcloud"/-->
+  </node>
+
+  <node pkg="loam_velodyne_vance" type="laserOdometry_vance" name="laserOdometry" output="screen" respawn="true"/>
+
+
+  <node pkg="loam_velodyne_vance" type="laserMapping_vance" name="laserMapping" output="screen"/>
+  <node pkg="loam_velodyne_vance" type="transformMaintenance_vance" name="transformMaintenance" output="screen"/>
+
+  <group if="$(arg rviz)">
+    <node launch-prefix="nice" pkg="rviz" type="rviz" name="rviz" args="-d $(find loam_velodyne_vance)/rviz_cfg/loam_velodyne.rviz" />
+  </group>
+
+</launch>
