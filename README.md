@@ -11,6 +11,6 @@ Wiki Webpage by the Author: [http://wiki.ros.org/loam_velodyne](http://wiki.ros.
 # how to use
 Check https://github.com/laboshinl/loam_velodyne 
 
-# What I have done
+# what I am doing
 - Add some comments based on others and what I took for.
-- Make it suitable for KITTI dateset.(no good result by now, still ongoing)
+- Make it available for KITTI dateset.(no good result by now, still ongoing)
