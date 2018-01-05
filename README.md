@@ -13,4 +13,5 @@ Check https://github.com/laboshinl/loam_velodyne
 
 # what I am doing
 - Add some comments based on others and what I took for.
-- Make it available for KITTI dateset.(no good result by now, still ongoing)
+- Make it available for KITTI dateset. (no good result by now, still ongoing)
+- Rename it to "loam_velodyne_vance" so that I can use it and its original version in the same time.
