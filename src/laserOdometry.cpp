@@ -464,13 +464,12 @@ int main(int argc, char** argv)
 
       if (laserCloudCornerLastNum > 10 && laserCloudSurfLastNum > 100) {
         std::vector<int> indices;
-        pcl::removeNaNFromPointCloud(*cornerPointsSharp,*cornerPointsSharp, indices);
+        pcl::removeNaNFromPointCloud(*cornerPointsSharp, *cornerPointsSharp, indices);
         int cornerPointsSharpNum = cornerPointsSharp->points.size();
         int surfPointsFlatNum = surfPointsFlat->points.size();
         for (int iterCount = 0; iterCount < 25; iterCount++) {
           for (int i = 0; i < cornerPointsSharpNum; i++) {
             TransformToStart(&cornerPointsSharp->points[i], &pointSel);
-
             if (iterCount % 5 == 0) {
               std::vector<int> indices;
               pcl::removeNaNFromPointCloud(*laserCloudCornerLast,*laserCloudCornerLast, indices);
@@ -797,8 +796,7 @@ int main(int argc, char** argv)
           }
 
           //------- (bug fix: sometime the L-M optimization result matX contains NaN, which will break the whole node)
-          if (isnan(matX.at<float>(0, 0)) || isnan(matX.at<float>(1, 0)) || isnan(matX.at<float>(2, 0)) || isnan(matX.at<float>(3, 0)) || isnan(matX.at<float>(4, 0)) || isnan(matX.at<float>(5, 0)))
-          {
+          if (isnan(matX.at<float>(0, 0)) || isnan(matX.at<float>(1, 0)) || isnan(matX.at<float>(2, 0)) || isnan(matX.at<float>(3, 0)) || isnan(matX.at<float>(4, 0)) || isnan(matX.at<float>(5, 0))) {
             printf("[USER WARN]laser Odometry: NaN found in var \"matX\", this L-M optimization step is going to be ignored.\n");
           }
           else{
@@ -901,10 +899,8 @@ int main(int argc, char** argv)
       laserCloudCornerLastNum = laserCloudCornerLast->points.size();
       laserCloudSurfLastNum = laserCloudSurfLast->points.size();
       if (laserCloudCornerLastNum > 10 && laserCloudSurfLastNum > 100) {
-
         kdtreeCornerLast->setInputCloud(laserCloudCornerLast);
         kdtreeSurfLast->setInputCloud(laserCloudSurfLast);
-
       }
 
       if (frameCount >= skipFrameNum + 1) {

@@ -30,26 +30,29 @@
 //   J. Zhang and S. Singh. LOAM: Lidar Odometry and Mapping in Real-time.
 //     Robotics: Science and Systems Conference (RSS). Berkeley, CA, July 2014.
 
+
 #include <cmath>
 #include <vector>
-
-#include <loam_velodyne/common.h>
+// OpenCV & PCL
 #include <opencv/cv.h>
-#include <nav_msgs/Odometry.h>
-#include <opencv/cv.h>
-#include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/kdtree/kdtree_flann.h>
+#include <pcl_conversions/pcl_conversions.h>
+#include <pcl/io/pcd_io.h>
+// ROS
 #include <ros/ros.h>
 #include <sensor_msgs/Imu.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <tf/transform_datatypes.h>
 #include <tf/transform_broadcaster.h>
-#include <velodyne_pointcloud/point_types.h>  //64ES3修改部分
-#include <velodyne_pointcloud/rawdata.h>      //64ES3修改部分
+#include <nav_msgs/Odometry.h>
+// Velodyne
+#include <velodyne_pointcloud/point_types.h>  // 64ES3修改部分
+#include <velodyne_pointcloud/rawdata.h>      // 64ES3修改部分
 
+#include <loam_velodyne/common.h>
 
 using std::sin;
 using std::cos;
@@ -61,16 +64,18 @@ const int systemDelay = 20;
 int systemInitCount = 0;
 bool systemInited = false;
 
-const int N_SCANS = 64;         // 从16改到64
+const int N_SCANS = 64;         // 激光线数,从16改到64
 
-float cloudCurvature[300000];    //64ES3修改部分,原值均为40000
-int cloudSortInd[300000];        //64ES3修改部分
-int cloudNeighborPicked[300000]; //64ES3修改部分
-int cloudLabel[300000];          //64ES3修改部分
+// 每个点的曲率等为数组,需考虑数组大小,原值均为40000
+float cloudCurvature[160000];    // 存储每个点的曲率
+int cloudSortInd[160000];        //
+int cloudNeighborPicked[160000]; //
+int cloudLabel[160000];          //
 
+// IMU数据处理相关变量
 int imuPointerFront = 0;
 int imuPointerLast = -1;
-const int imuQueLength = 200;
+const int imuQueLength = 2000;
 
 float imuRollStart = 0, imuPitchStart = 0, imuYawStart = 0;
 float imuRollCur = 0, imuPitchCur = 0, imuYawCur = 0;
@@ -101,6 +106,7 @@ float imuShiftX[imuQueLength] = {0};
 float imuShiftY[imuQueLength] = {0};
 float imuShiftZ[imuQueLength] = {0};
 
+// ROS Publisher
 ros::Publisher pubLaserCloud;
 ros::Publisher pubCornerPointsSharp;
 ros::Publisher pubCornerPointsLessSharp;
@@ -108,6 +114,7 @@ ros::Publisher pubSurfPointsFlat;
 ros::Publisher pubSurfPointsLessFlat;
 ros::Publisher pubImuTrans;
 
+// IMU漂移
 void ShiftToStartIMU(float pointTime)
 {
   imuShiftFromStartXCur = imuShiftXCur - imuShiftXStart - imuVeloXStart * pointTime;
@@ -215,6 +222,7 @@ void AccumulateIMUShift()
 // 点云预处理子程序
 void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
 {
+  // 延迟一会启动程序?
   if (!systemInited) {
     systemInitCount++;
     if (systemInitCount >= systemDelay) {
@@ -225,9 +233,8 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
 
   std::vector<int> scanStartInd(N_SCANS, 0);    // 起始位置
   std::vector<int> scanEndInd(N_SCANS, 0);      // 终止位置
-  
-  double timeScanCur = laserCloudMsg->header.stamp.toSec();
-  pcl::PointCloud<pcl::PointXYZ> laserCloudIn;
+  double timeScanCur = laserCloudMsg->header.stamp.toSec(); // 消息的时间戳
+  pcl::PointCloud<pcl::PointXYZ> laserCloudIn;  // 输入点云转存PCL格式
   pcl::PointCloud<velodyne_pointcloud::PointXYZIR> laserCloudIn_vel;  // 64ES3修改部分
 
   pcl::fromROSMsg(*laserCloudMsg, laserCloudIn);
@@ -235,8 +242,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
 
   std::vector<int> indices;
   pcl::removeNaNFromPointCloud(laserCloudIn, laserCloudIn, indices);  // 将点云中的NaN剔除
-  // pcl::removeNaNFromPointCloud(laserCloudIn_vel, laserCloudIn_vel, indices);  // 64ES3修改部分
-  int cloudSize = laserCloudIn.points.size();
+  int cloudSize = laserCloudIn.points.size();   // 点云总数
 
   // 计算起始和终止角度
   float startOri = -atan2(laserCloudIn.points[0].y, laserCloudIn.points[0].x);
@@ -249,15 +255,14 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
     endOri += 2 * M_PI;
   }
 
-  //遍历所有点，根据角度计算结果将其划分为不同的线：计算角度-->计算起始和终止位置-->插入IMU数据-->将点插入容器中
+  // 遍历所有点，根据角度计算结果将其划分为不同的线：计算角度-->计算起始和终止位置-->插入IMU数据-->将点插入容器中
   /**
-   * 三维扫描仪并不像二维那样按照角度给出个距离值，从而保证每次的扫描都有
-   * 相同的数据量。 PointCloud2接受到的点云的大小在变化，因此在数据到达时
-   * 需要一些运算来判断点的一些特征。
+   * 三维扫描仪并不像二维那样按照角度给出个距离值，从而保证每次的扫描都有相同的数据量。
+   * PointCloud2接受到的点云的大小在变化，因此在数据到达时需要一些运算来判断点的一些特征。
    */
   /* 将点划到不同的线中 */
   bool halfPassed = false;
-  int count = cloudSize;
+  int count = cloudSize;    // 点数
 
   PointType point;
   std::vector<pcl::PointCloud<PointType> > laserCloudScans(N_SCANS);
@@ -268,7 +273,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
 
     int scanID;
 
-    //64ES3修改部分
+    // 64ES3修改部分
     /*float angle = atan(point.y / sqrt(point.x * point.x + point.z * point.z)) * 180 / M_PI; // 计算高度角(度)
     int roundedAngle = int(angle + (angle<0.0?-0.5:+0.5)); 
     // 角度大于零，由小到大划入偶数线（0->16）；角度小于零，由大到小划入奇数线(15->1)
@@ -279,14 +284,14 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
       scanID = roundedAngle + (N_SCANS - 1);
     }*/ 
     
-    scanID = laserCloudIn_vel.points[indices[i]].ring;  //64ES3修改部分
+    scanID = laserCloudIn_vel.points[indices[i]].ring;  // 64ES3修改部分
 
     if (scanID > (N_SCANS - 1) || scanID < 0 ){
       count--;  // 将64线以外的杂点剔除
       continue;
     }
 
-    float ori = -atan2(point.x, point.z);
+    float ori = -atan2(point.x, point.z); //　此点的角度
     if (!halfPassed) {
       if (ori < startOri - M_PI / 2) {
         ori += 2 * M_PI;
@@ -299,7 +304,6 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
       }
     } else {
       ori += 2 * M_PI;
-
       if (ori < endOri - M_PI * 3 / 2) {
         ori += 2 * M_PI;
       } else if (ori > endOri + M_PI / 2) {
@@ -308,7 +312,8 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
     }
 
     float relTime = (ori - startOri) / (endOri - startOri);
-    point.intensity = scanID + scanPeriod * relTime;    // 点的intensity: 整数部分为scanID， 小数部分为扫描时间
+    // point.intensity = scanID + scanPeriod * relTime;    // 点的intensity,整数部分为scanID，小数部分为扫描时间
+    point.intensity = laserCloudIn_vel.points[indices[i]].intensity;  // 64ES3修改部分
 
     /* 插入IMU的数据 */ 
     if (imuPointerLast >= 0) {
@@ -376,9 +381,9 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
         TransformToStartIMU(&point);
       }
     }
-    laserCloudScans[scanID].push_back(point);
+    laserCloudScans[scanID].push_back(point); // 将点压入到每个线中
   }
-  cloudSize = count;
+  cloudSize = count; 
 
   pcl::PointCloud<PointType>::Ptr laserCloud(new pcl::PointCloud<PointType>());
   /* 更新总的点云laserCloud */
@@ -386,6 +391,12 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
     *laserCloud += laserCloudScans[i];
   }
   int scanCount = -1;
+  
+  // test
+  std::cout << "laserCloud width & height: " << laserCloud->width << ", " << laserCloud->height << std::endl;
+  // pcl::PCDWriter writer;
+  // writer.write<PointType> ("laserCloud.pcd", *laserCloud, false);
+  // pcl::io::savePCDFile ("laserCloud.pcd", *laserCloud);
 
   // 根据点的曲率c来将点划分为不同的类别（边/面特征或不是特征）
   // 遍历每个点（除了前五个和后五个），计算各点曲率并找到所有线的起点终点位置
@@ -412,8 +423,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
     /**
 	 * 计算以某点与其相邻的10个点所构成的平面在该点出的曲率：
 	 * 由曲率公式知：K=1/R，因此为简化计算可通过10个向量的和向量的模长表
-	 * 示其在该点处曲率半径的长，因此R×R可用来表示曲率的大小
-	 * -> R×R越大，该点处越平坦。
+	 * 示其在该点处曲率半径的长，因此R×R可用来表示曲率的大小,R×R越大，该点处越平坦。
 	 */
     cloudCurvature[i] = diffX * diffX + diffY * diffY + diffZ * diffZ;
     cloudSortInd[i] = i;
@@ -713,34 +723,36 @@ void imuHandler(const sensor_msgs::Imu::ConstPtr& imuIn)
 }
 
 
-
+// 代码主要任务:提取特征点,并发布
 int main(int argc, char** argv)
 {
-  //ros::init(argc, argv, "scanRegistration");
   ros::init(argc, argv, "scanRegistration");
+
   ros::NodeHandle nh;
 
   ros::Subscriber subLaserCloud = nh.subscribe<sensor_msgs::PointCloud2> 
                                   ("/velodyne_points", 2, laserCloudHandler);
 
-  ros::Subscriber subImu = nh.subscribe<sensor_msgs::Imu> ("/imu/data", 50, imuHandler);
+  ros::Subscriber subImu = nh.subscribe<sensor_msgs::Imu> 
+                                  ("/imu/data", 50, imuHandler);
 
   pubLaserCloud = nh.advertise<sensor_msgs::PointCloud2>
-                                 ("/velodyne_cloud_2", 2);
+                                  ("/velodyne_cloud_2", 2);
 
   pubCornerPointsSharp = nh.advertise<sensor_msgs::PointCloud2>
-                                        ("/laser_cloud_sharp", 2);
+                                  ("/laser_cloud_sharp", 2);
 
   pubCornerPointsLessSharp = nh.advertise<sensor_msgs::PointCloud2>
-                                            ("/laser_cloud_less_sharp", 2);
+                                  ("/laser_cloud_less_sharp", 2);
 
   pubSurfPointsFlat = nh.advertise<sensor_msgs::PointCloud2>
-                                       ("/laser_cloud_flat", 2);
+                                  ("/laser_cloud_flat", 2);
 
   pubSurfPointsLessFlat = nh.advertise<sensor_msgs::PointCloud2>
-                                           ("/laser_cloud_less_flat", 2);
+                                  ("/laser_cloud_less_flat", 2);
 
-  pubImuTrans = nh.advertise<sensor_msgs::PointCloud2> ("/imu_trans", 5);
+  pubImuTrans = nh.advertise<sensor_msgs::PointCloud2> 
+                                  ("/imu_trans", 5);
 
   ros::spin();
 
