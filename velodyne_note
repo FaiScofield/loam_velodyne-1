@@ -1,0 +1,53 @@
+# 配置velodyne
+sudo ifconfig eth0 192.168.3.043    # sudo ifconfig enp0s31f6 192.168.3.043
+sudo route add 192.168.3.255 eth0   # sudo route add 192.168.3.255 enp0s31f6
+bash velodyne_config.sh
+
+# velodyne显示
+roslaunch velodyne_pointcloud 64e-s3_points.launch
+rosrun rviz rviz -f velodyne
+
+# 运行相机
+roslaunch openni2_launch openni2.launch
+
+# 运行orb_slam2和loam
+bash '/home/vance/vance_ws/src/velodyne_config.sh'
+#sudo ifconfig eth0 192.168.3.043
+roslaunch velodyne_pointcloud 64e-s3_points.launch
+
+
+# 记录数据
+rosbag record /velodyne_points_down /camera/rgb/image_raw /camera/depth_registered/points #  /gps_imu
+
+
+
+# 跑算法
+roslaunch loam_velodyne loam_downsample_64.launch
+roslaunch loam_velodyne loam_velodyne_64.launch
+rosbag play '/media/vance/00077298000E1760/dataset/bags/2018-03-29-jx-around-411m.bag' 
+rosrun pcl_ros pointcloud_to_pcd input:=/velodyne_cloud_registered
+rosrun pcl_ros pointcloud_to_pcd input:=/laser_cloud_surround
+
+roslaunch loam_velodyne orbslam2_loam_64e.launch 
+roslaunch loam_velodyne downsample.launch
+roslaunch loam_velodyne orbslam2.launch
+
+rosrun orb_slam2 RGBD '/home/vance/slam_ws/ORB_SLAM2/Vocabulary/ORBvoc.bin' '/home/vance/slam_ws/ORB_SLAM2/Examples/ROS/orb_slam2/Asus.yaml' 
+
+
+1.编写shell脚本
+#!/bin/sh
+while [ true ]; do
+  /bin/sleep 1
+  /bin/date >>/tmp/date.txt
+done
+
+2.后台运行
+nohup /tmp/ceshi.sh 2>&1 > /dev/null &
+
+3.确认每秒执行
+tail -f /tmp/date.txt
+ 
+4. 停止脚本运行进程
+ps -ef | grep velodyne_config.sh |kill -9
+

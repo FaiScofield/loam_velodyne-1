@@ -1,26 +1,24 @@
-<?xml version="1.0"?>
 <launch>
 
   <arg name="rviz" default="true" />
 
-  <node pkg="loam_velodyne_vance" type="scanRegistrationKITTI" name="scanRegistrationKITTI" output="screen">
-    <remap from="/velodyne_points" to="/kitti/velo/pointcloud"/>
-    <!--remap from="/imu/data" to="/kitti/oxts/imu"/-->
+  <!--- TF -->
+  <node pkg="tf" type="static_transform_publisher" name="camera_init_to_map"  args="0 0 0 1.570795   0        1.570795 /map    /camera_init 10" />
+  <node pkg="tf" type="static_transform_publisher" name="base_link_to_camera" args="0 0 0 -1.570795 -1.570795 0        /camera /base_link   10" />
+
+  <node pkg="loam_velodyne_64e" type="scanRegistration_64e" name="scanRegistration" output="screen" respawn="true">
+    <remap from="/velodyne_points" to="/kitti/velo/pointcloud" />
+<!--    <remap from="/imu/data" to="/kitti/oxts/imu" />-->
   </node>
+  <node pkg="loam_velodyne_64e" type="laserOdometry_64e" name="laserOdometry" output="screen" respawn="true"/>
+  <node pkg="loam_velodyne_64e" type="laserMapping_64e" name="laserMapping" output="screen"/>
+  <node pkg="loam_velodyne_64e" type="transformMaintenance_64e" name="transformMaintenance" output="screen"/>
 
-  <node pkg="loam_velodyne_vance" type="laserOdometryKITTI" name="laserOdometryKITTI" output="screen" /><!--respawn="true"-->
-
-
-  <node pkg="loam_velodyne_vance" type="laserMappingKITTI" name="laserMappingKITTI" output="screen"/>
-  <node pkg="loam_velodyne_vance" type="transformMaintenanceKITTI" name="transformMaintenanceKITTI" output="screen"/>
+<!--  <node pkg="tf" type="static_transform_publisher" name="camera_init_to_map"  args="0 0 0 1.570795   0        1.570795 /map    /camera_init 10" />
+  <node pkg="tf" type="static_transform_publisher" name="base_link_to_camera" args="0 0 0 -1.570795 -1.570795 0        /camera /base_link   10" />-->
 
   <group if="$(arg rviz)">
-    <node launch-prefix="nice" pkg="rviz" type="rviz" name="rviz" args="-d $(find loam_velodyne_vance)/rviz_cfg/loam_velodyne.rviz" />
+    <node launch-prefix="nice" pkg="rviz" type="rviz" name="rviz" args="-d $(find loam_velodyne_64e)/rviz_cfg/loam_velodyne.rviz" />
   </group>
-<!--
-  <node pkg="loam_velodyne_vance" type="saveOdometryKITTI" name="saveOdometryKITTI" output="screen"/>
 
-
-  <node pkg="tf" type="static_transform_publisher" name="static_tf_1" args="1 0 0 0 0 0 1 world camera_init   100" />  
-  <node pkg="tf" type="static_transform_publisher" name="static_tf_2" args="1 0 0 0 0 0 1 velo_link camera_init   100" />  -->
 </launch>
